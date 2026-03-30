@@ -8,8 +8,12 @@ import pdfplumber
 from flask import Flask, jsonify, request
 from pypdf import PdfReader, PdfWriter
 
-app = Flask(__name__)
-app.config["MAX_CONTENT_LENGTH"] = 100 * 1024 * 1024  # 100 MB
+import os
+
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+app = Flask(__name__, static_folder=os.path.join(BASE_DIR, "public"), static_url_path="")
+app.config["MAX_CONTENT_LENGTH"] = 200 * 1024 * 1024  # 200 MB
 
 # ──────────────────────────────────────────────
 # Regex helpers
@@ -72,8 +76,7 @@ def sanitize_filename(name: str) -> str:
 
 @app.route("/")
 def index():
-    with open("public/index.html", encoding="utf-8") as f:
-        return f.read()
+    return app.send_static_file("index.html")
 
 
 # ── SEPARAR ──────────────────────────────────
