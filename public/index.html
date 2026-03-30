@@ -297,13 +297,17 @@
       </div>
       <div class="card-body">
         <p class="rename-info">
-          Selecione os PDFs, edite o novo nome de cada um e baixe o <strong>ZIP renomeado</strong>. Os arquivos originais não são alterados.
+          Selecione os PDFs. O sistema identifica automaticamente o <strong>Nome e CPF</strong> de cada colaborador. Você pode editar antes de baixar.
         </p>
         <div class="drop-zone" id="ren-drop">
           <input type="file" id="ren-input" multiple accept=".pdf" />
           <span class="drop-icon">✎</span>
           <div class="drop-title">Selecione os PDFs para renomear</div>
-          <div class="drop-sub">Edite o novo nome de cada arquivo abaixo</div>
+          <div class="drop-sub">Nomes preenchidos automaticamente por CPF/Nome do colaborador</div>
+        </div>
+        <div id="ren-extracting" style="display:none;margin-top:14px">
+          <div class="progress-bar-bg"><div class="progress-bar-fill indeterminate"></div></div>
+          <div class="progress-status" id="ren-extract-status">Lendo PDFs...</div>
         </div>
         <div id="ren-list" style="margin-top:14px;display:flex;flex-direction:column;gap:5px"></div>
         <div class="alert-error" id="ren-error"></div>
@@ -561,8 +565,11 @@ mrg.btn.addEventListener('click', async () => {
   }
 });
 
-// ══════════════════════════ TAB 3 — RENOMEAR ══════════════════════════
+// ══════════════════════════ TAB 3 — RENOMEAR (100% client-side) ══════════════════════════
+// Uses pdf.js (CDN) to extract text + JSZip to build ZIP in-browser. No server calls needed.
+
 let renFiles = [], renNames = [];
+
 const ren = {
   drop: document.getElementById('ren-drop'),
   input: document.getElementById('ren-input'),
@@ -572,15 +579,102 @@ const ren = {
   error: document.getElementById('ren-error'),
   success: document.getElementById('ren-success'),
   download: document.getElementById('ren-download'),
+  extracting: document.getElementById('ren-extracting'),
+  extractStatus: document.getElementById('ren-extract-status'),
 };
 
-setupDrop(ren.drop, ren.input, files => {
-  files.forEach(f => {
-    if (!renFiles.find(x => x.name===f.name&&x.size===f.size)) {
-      renFiles.push(f);
-      renNames.push(f.name.replace(/\.pdf$/i,''));
-    }
+// ── Load pdf.js and JSZip from CDN ──
+const pdfjs = window['pdfjs-dist/build/pdf'];
+
+function loadScript(src) {
+  return new Promise((res, rej) => {
+    if (document.querySelector(`script[src="${src}"]`)) { res(); return; }
+    const s = document.createElement('script');
+    s.src = src; s.onload = res; s.onerror = rej;
+    document.head.appendChild(s);
   });
+}
+
+// ── CPF/Nome extraction from plain text ──
+function extractFromText(text) {
+  const CPF_RE   = /\b(\d{3}[.\s]?\d{3}[.\s]?\d{3}[-\.\s]?\d{2})\b/g;
+  const CNPJ_RE  = /\b\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2}\b/g;
+  const IGNORE   = new Set(['03356745182']);
+
+  function normCpf(c) { return c.replace(/\D/g,''); }
+
+  // Formato 1: Informe 829
+  let m = text.match(/C\.P\.F\.\s+NOME COMPLETO[\s\S]*?\n\s*(\d{3}[.\s]?\d{3}[.\s]?\d{3}[-\.\s]?\d{2})\s+([A-ZÁÉÍÓÚÂÊÎÔÛÃÕÀÈÌÒÙÇ ]+)/);
+  if (m) return { cpf: normCpf(m[1]), nome: m[2].trim() };
+
+  // Formato 2: DIRF Folha
+  m = text.match(/INFORMAÇÃO DO BENEFICIÁRIO DO DECLARANTE[\s\S]*?CPF:\s*(\d{3}[.\s]?\d{3}[.\s]?\d{3}[-\.\s]?\d{2})\s+Nome:\s*\d+\s*-\s*([A-ZÁÉÍÓÚÂÊÎÔÛÃÕÀÈÌÒÙÇ ]+)/);
+  if (m) return { cpf: normCpf(m[1]), nome: m[2].trim() };
+
+  // Formato 3: Informe Janeiro
+  m = text.match(/CPF:\s+Nome Completo:[\s\S]*?\n\s*(\d{3}[.\s]?\d{3}[.\s]?\d{3}[-\.\s]?\d{2})\s+([A-ZÁÉÍÓÚÂÊÎÔÛÃÕÀÈÌÒÙÇ ]+)/);
+  if (m) return { cpf: normCpf(m[1]), nome: m[2].trim() };
+
+  // Fallback: first CPF that is not a CNPJ chunk
+  const cnpjNorms = new Set([...text.matchAll(CNPJ_RE)].map(x => x[0].replace(/\D/g,'')));
+  for (const c of text.matchAll(CPF_RE)) {
+    const n = normCpf(c[1]);
+    if (!IGNORE.has(n) && !cnpjNorms.has(n)) return { cpf: n, nome: null };
+  }
+  return null;
+}
+
+async function extractPdfText(file) {
+  await loadScript('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js');
+  const pdfjsLib = window['pdfjsLib'] || window['pdfjs-dist/build/pdf'];
+  if (!pdfjsLib) throw new Error('pdf.js não carregado');
+  pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+  const ab = await file.arrayBuffer();
+  const doc = await pdfjsLib.getDocument({ data: ab }).promise;
+  let fullText = '';
+  for (let p = 1; p <= Math.min(doc.numPages, 3); p++) {
+    const page = await doc.getPage(p);
+    const tc = await page.getTextContent();
+    fullText += tc.items.map(i => i.str).join(' ') + '\n';
+  }
+  return fullText;
+}
+
+function fmtCpf(c) {
+  if (c.length === 11) return `${c.slice(0,3)}.${c.slice(3,6)}.${c.slice(6,9)}-${c.slice(9)}`;
+  return c;
+}
+
+function sanitizeName(s) { return s.replace(/[\\/*?:"<>|]/g,'').trim(); }
+
+setupDrop(ren.drop, ren.input, async files => {
+  const newFiles = files.filter(f => !renFiles.find(x => x.name===f.name&&x.size===f.size));
+  if (!newFiles.length) return;
+
+  showEl(ren.extracting);
+  ren.btn.disabled = true;
+
+  for (let i = 0; i < newFiles.length; i++) {
+    const f = newFiles[i];
+    ren.extractStatus.textContent = `Lendo ${i+1}/${newFiles.length}: ${f.name}`;
+    let suggestedName = f.name.replace(/\.pdf$/i,'');
+    try {
+      const text = await extractPdfText(f);
+      const result = extractFromText(text);
+      if (result && result.cpf) {
+        const cpf = result.cpf;
+        const nome = result.nome ? sanitizeName(result.nome) : '';
+        suggestedName = nome ? `${nome}_${cpf}` : cpf;
+      }
+    } catch(e) {
+      console.warn('Falha ao extrair texto de', f.name, e);
+    }
+    renFiles.push(f);
+    renNames.push(suggestedName);
+  }
+
+  hideEl(ren.extracting);
   renderRenList();
 });
 
@@ -593,7 +687,7 @@ function renderRenList() {
     row.className = 'rename-item';
     row.innerHTML = `
       <span class="fi-icon">📄</span>
-      <span class="fi-name" style="max-width:160px;min-width:60px">${f.name}</span>
+      <span class="fi-name" style="max-width:150px;min-width:50px">${f.name}</span>
       <span class="rename-arrow">→</span>
       <input class="fi-rename-input" data-idx="${i}" value="${renNames[i]}" placeholder="novo nome" />
       <span class="fi-ext">.pdf</span>
@@ -608,25 +702,37 @@ function renderRenList() {
   hideEl(ren.error); hideEl(ren.success); hideEl(ren.download);
 }
 
+// ── Generate ZIP entirely in the browser using JSZip ──
 ren.btn.addEventListener('click', async () => {
   if (!renFiles.length) return;
   hideEl(ren.error); hideEl(ren.success); hideEl(ren.download);
-  ren.btn.disabled = true; ren.btn.textContent = '⏳ Gerando...';
-
-  const fd = new FormData();
-  renFiles.forEach((f, i) => {
-    fd.append('pdfs', f);
-    fd.append('names', (renNames[i] || f.name.replace(/\.pdf$/i,'')) + '.pdf');
-  });
+  ren.btn.disabled = true; ren.btn.textContent = '⏳ Gerando ZIP...';
 
   try {
-    const res = await fetch('/api/rename', { method: 'POST', body: fd });
-    const data = await res.json();
-    if (!res.ok) { showErr(ren.error, data.error || 'Erro no servidor.'); return; }
+    await loadScript('https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js');
+    const JSZip = window.JSZip;
+    if (!JSZip) throw new Error('JSZip não carregou');
 
-    ren.download.href = URL.createObjectURL(b64ToBlob(data.zip_b64, 'application/zip'));
+    const zip = new JSZip();
+    const seen = {};
+
+    for (let i = 0; i < renFiles.length; i++) {
+      let name = sanitizeName(renNames[i] || renFiles[i].name.replace(/\.pdf$/i,''));
+      if (!name) name = `arquivo_${i+1}`;
+      let fname = name + '.pdf';
+      if (seen[fname] !== undefined) {
+        seen[fname]++;
+        fname = `${name}_${seen[fname]}.pdf`;
+      } else { seen[fname] = 0; }
+      const ab = await renFiles[i].arrayBuffer();
+      zip.file(fname, ab);
+    }
+
+    const blob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE' });
+    ren.download.href = URL.createObjectURL(blob);
+    ren.download.download = 'pdfs_renomeados.zip';
     showEl(ren.download);
-    showOk(ren.success, `${renFiles.length} arquivo(s) renomeado(s) com sucesso.`);
+    showOk(ren.success, `${renFiles.length} arquivo(s) renomeado(s) — ZIP gerado no navegador.`);
   } catch(e) {
     showErr(ren.error, 'Falha: ' + e.message);
   } finally {
