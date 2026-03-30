@@ -1,0 +1,638 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Gerenciador de Informes — Rezende Energia</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@300;400;600;700&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --orange: #F7931E;
+      --black: #0A0A0A;
+      --surface: #111111;
+      --surface2: #1a1a1a;
+      --surface3: #222222;
+      --border: #2a2a2a;
+      --border-bright: #3a3a3a;
+      --text: #e8e8e8;
+      --text-muted: #888;
+      --text-dim: #555;
+      --success: #2ecc71;
+      --warn: #f39c12;
+      --error: #e74c3c;
+      --mono: 'IBM Plex Mono', monospace;
+      --sans: 'IBM Plex Sans', sans-serif;
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { font-size: 16px; scroll-behavior: smooth; }
+    body {
+      background: var(--black);
+      color: var(--text);
+      font-family: var(--sans);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    body::before {
+      content: '';
+      position: fixed; inset: 0;
+      background-image:
+        linear-gradient(var(--border) 1px, transparent 1px),
+        linear-gradient(90deg, var(--border) 1px, transparent 1px);
+      background-size: 40px 40px;
+      opacity: 0.3;
+      pointer-events: none; z-index: 0;
+    }
+
+    header { width: 100%; max-width: 900px; padding: 40px 24px 0; position: relative; z-index: 1; }
+    .logo-bar { display: flex; align-items: center; gap: 12px; margin-bottom: 28px; }
+    .logo-icon { width: 38px; height: 38px; background: var(--orange); display: flex; align-items: center; justify-content: center; font-size: 18px; flex-shrink: 0; }
+    .logo-text { font-family: var(--mono); font-size: 11px; color: var(--text-muted); letter-spacing: 0.15em; text-transform: uppercase; line-height: 1.4; }
+    .logo-text strong { display: block; color: var(--text); font-size: 13px; letter-spacing: 0.08em; }
+    h1 { font-size: clamp(24px, 4vw, 42px); font-weight: 700; line-height: 1.1; letter-spacing: -0.02em; }
+    h1 span { color: var(--orange); }
+    .subtitle { margin-top: 10px; font-size: 14px; color: var(--text-muted); max-width: 540px; line-height: 1.6; }
+
+    main { width: 100%; max-width: 900px; padding: 28px 24px 80px; position: relative; z-index: 1; }
+
+    /* ── TABS ── */
+    .tabs-nav { display: flex; border-bottom: 1px solid var(--border); }
+    .tab-btn {
+      padding: 14px 24px; background: none; border: none;
+      border-bottom: 2px solid transparent; color: var(--text-muted);
+      font-family: var(--mono); font-size: 12px; letter-spacing: 0.1em; text-transform: uppercase;
+      cursor: pointer; transition: color 0.15s, border-color 0.15s;
+      display: flex; align-items: center; gap: 8px; margin-bottom: -1px;
+    }
+    .tab-btn:hover { color: var(--text); }
+    .tab-btn.active { color: var(--orange); border-bottom-color: var(--orange); }
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+
+    /* ── CARD ── */
+    .card { background: var(--surface); border: 1px solid var(--border); border-top: none; }
+    .card-header { padding: 14px 20px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; background: var(--surface2); }
+    .card-label { font-family: var(--mono); font-size: 11px; color: var(--text-muted); letter-spacing: 0.12em; text-transform: uppercase; }
+    .card-label .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--orange); margin-right: 8px; animation: pulse 2s infinite; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+    .card-body { padding: 22px 20px; }
+
+    /* ── DROP ZONE ── */
+    .drop-zone { border: 2px dashed var(--border-bright); padding: 44px 24px; text-align: center; cursor: pointer; transition: border-color 0.2s, background 0.2s; position: relative; }
+    .drop-zone:hover, .drop-zone.drag-over { border-color: var(--orange); background: rgba(247,147,30,0.04); }
+    .drop-zone input[type="file"] { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%; }
+    .drop-icon { font-size: 36px; margin-bottom: 12px; display: block; }
+    .drop-title { font-size: 15px; font-weight: 600; color: var(--text); margin-bottom: 5px; }
+    .drop-sub { font-size: 13px; color: var(--text-muted); }
+    .drop-sub strong { color: var(--orange); }
+
+    /* ── FILE LIST ── */
+    .file-list { margin-top: 14px; display: flex; flex-direction: column; gap: 5px; }
+    .file-item { display: flex; align-items: center; gap: 10px; padding: 9px 13px; background: var(--surface2); border: 1px solid var(--border); font-size: 13px; animation: slideIn 0.18s ease; }
+    .file-item.dragging { opacity: 0.4; border-style: dashed; }
+    .file-item.drag-target { border-color: var(--orange); background: rgba(247,147,30,0.06); }
+    @keyframes slideIn { from{opacity:0;transform:translateY(-5px)} to{opacity:1;transform:translateY(0)} }
+    .fi-drag { color: var(--text-dim); cursor: grab; font-size: 14px; flex-shrink:0; }
+    .fi-drag:active { cursor: grabbing; }
+    .fi-icon { color: var(--orange); font-size: 15px; flex-shrink:0; }
+    .fi-num { font-family: var(--mono); font-size: 10px; color: var(--text-dim); width: 18px; text-align: center; flex-shrink:0; }
+    .fi-name { flex: 1; font-family: var(--mono); font-size: 12px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .fi-size { font-family: var(--mono); font-size: 11px; color: var(--text-dim); flex-shrink:0; }
+    .fi-remove { background: none; border: none; cursor: pointer; color: var(--text-dim); font-size: 17px; line-height: 1; transition: color 0.15s; padding: 0 2px; flex-shrink:0; }
+    .fi-remove:hover { color: var(--error); }
+
+    /* ── BUTTONS ── */
+    .btn-primary { width: 100%; margin-top: 18px; padding: 15px; background: var(--orange); color: var(--black); border: none; font-family: var(--mono); font-size: 13px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; cursor: pointer; transition: background 0.15s, transform 0.1s; display: flex; align-items: center; justify-content: center; gap: 10px; }
+    .btn-primary:hover:not(:disabled) { background: #e07d10; }
+    .btn-primary:active:not(:disabled) { transform: scale(0.99); }
+    .btn-primary:disabled { background: var(--text-dim); color: #888; cursor: not-allowed; }
+    .btn-outline { width: 100%; margin-top: 14px; padding: 15px; background: transparent; color: var(--orange); border: 2px solid var(--orange); font-family: var(--mono); font-size: 13px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; cursor: pointer; transition: background 0.15s, color 0.15s; display: flex; align-items: center; justify-content: center; gap: 10px; text-decoration: none; }
+    .btn-outline:hover { background: var(--orange); color: var(--black); }
+    .btn-sm { padding: 7px 13px; background: var(--surface3); border: 1px solid var(--border-bright); color: var(--text-muted); font-family: var(--mono); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; cursor: pointer; transition: border-color 0.15s, color 0.15s; }
+    .btn-sm:hover { border-color: var(--orange); color: var(--orange); }
+
+    /* ── PROGRESS ── */
+    .progress-wrap { display: none; margin-top: 20px; }
+    .progress-top { font-family: var(--mono); font-size: 11px; color: var(--text-muted); letter-spacing: 0.1em; margin-bottom: 7px; display: flex; justify-content: space-between; }
+    .progress-bar-bg { height: 3px; background: var(--border); overflow: hidden; }
+    .progress-bar-fill { height: 100%; background: var(--orange); width: 0%; transition: width 0.3s ease; }
+    .progress-bar-fill.indeterminate { width: 40%; animation: indet 1.3s infinite ease-in-out; }
+    @keyframes indet { 0%{transform:translateX(-100%)} 100%{transform:translateX(350%)} }
+    .progress-status { margin-top: 7px; font-size: 12px; color: var(--text-muted); font-family: var(--mono); }
+
+    /* ── RESULT META ── */
+    .result-meta { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; background: var(--border); border: 1px solid var(--border); }
+    .meta-item { background: var(--surface); padding: 18px; text-align: center; }
+    .meta-value { font-family: var(--mono); font-size: 28px; font-weight: 600; color: var(--orange); line-height: 1; display: block; }
+    .meta-key { font-size: 10px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.1em; margin-top: 5px; display: block; }
+
+    /* ── TABLE ── */
+    .table-wrap { overflow-x: auto; border: 1px solid var(--border); border-top: none; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    thead tr { background: var(--surface2); border-bottom: 1px solid var(--border); }
+    th { padding: 11px 15px; text-align: left; font-family: var(--mono); font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-muted); font-weight: 600; }
+    tbody tr { border-bottom: 1px solid var(--border); transition: background 0.1s; }
+    tbody tr:last-child { border-bottom: none; }
+    tbody tr:hover { background: var(--surface2); }
+    td { padding: 10px 15px; }
+    td.td-nome { font-weight: 600; }
+    td.td-cpf { font-family: var(--mono); font-size: 12px; color: var(--text-muted); }
+    td.td-pag { font-family: var(--mono); font-size: 12px; text-align: right; }
+    .badge { display: inline-flex; align-items: center; justify-content: center; min-width: 28px; height: 20px; padding: 0 6px; background: rgba(247,147,30,0.12); color: var(--orange); font-size: 11px; font-family: var(--mono); font-weight: 600; }
+
+    /* ── ALERTS ── */
+    .alert-error { padding: 12px 15px; border: 1px solid var(--error); background: rgba(231,76,60,0.08); font-family: var(--mono); font-size: 12px; color: var(--error); margin-top: 14px; display: none; }
+    .alert-success { padding: 12px 15px; border: 1px solid var(--success); background: rgba(46,204,113,0.08); font-family: var(--mono); font-size: 12px; color: var(--success); margin-top: 14px; display: none; }
+
+    /* ── WARNINGS ── */
+    .warn-section { display: none; margin-top: 10px; }
+    .warn-toggle { background: none; border: 1px solid var(--warn); color: var(--warn); padding: 7px 13px; font-family: var(--mono); font-size: 11px; letter-spacing: 0.08em; cursor: pointer; display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; transition: background 0.15s; }
+    .warn-toggle:hover { background: rgba(243,156,18,0.08); }
+    .warn-list { display: none; border: 1px solid var(--border); border-top: none; background: var(--surface2); padding: 10px 14px; max-height: 140px; overflow-y: auto; }
+    .warn-list.open { display: block; }
+    .warn-list p { font-family: var(--mono); font-size: 11px; color: var(--text-muted); padding: 3px 0; border-bottom: 1px solid var(--border); }
+    .warn-list p:last-child { border-bottom: none; }
+
+    /* ── MERGE ── */
+    .merge-hint { padding: 10px 14px; background: rgba(247,147,30,0.06); border: 1px solid rgba(247,147,30,0.2); font-family: var(--mono); font-size: 11px; color: var(--text-muted); margin-bottom: 14px; line-height: 1.6; }
+    .merge-hint strong { color: var(--orange); }
+    .field-label { font-family: var(--mono); font-size: 11px; color: var(--text-muted); letter-spacing: 0.1em; text-transform: uppercase; display: block; margin-bottom: 6px; margin-top: 18px; }
+    .field-input { width: 100%; background: var(--surface2); border: 1px solid var(--border-bright); color: var(--text); font-family: var(--mono); font-size: 13px; padding: 10px 12px; outline: none; }
+    .field-input:focus { border-color: var(--orange); }
+
+    /* ── RENAME ── */
+    .rename-info { font-size: 13px; color: var(--text-muted); margin-bottom: 16px; line-height: 1.6; }
+    .rename-info strong { color: var(--text); }
+    .rename-item { display: flex; align-items: center; gap: 10px; padding: 9px 13px; background: var(--surface2); border: 1px solid var(--border); animation: slideIn 0.18s ease; }
+    .rename-arrow { color: var(--text-dim); font-size: 12px; flex-shrink:0; }
+    .fi-rename-input { flex: 1; background: var(--surface3); border: 1px solid var(--border-bright); color: var(--text); font-family: var(--mono); font-size: 12px; padding: 5px 9px; outline: none; min-width: 0; }
+    .fi-rename-input:focus { border-color: var(--orange); }
+    .fi-ext { font-family: var(--mono); font-size: 11px; color: var(--text-dim); flex-shrink:0; }
+    .btn-row { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; }
+
+    /* ── HOW TO ── */
+    .how-to { margin-top: 40px; border: 1px solid var(--border); }
+    .how-to-header { padding: 12px 18px; border-bottom: 1px solid var(--border); background: var(--surface2); font-family: var(--mono); font-size: 11px; color: var(--text-muted); letter-spacing: 0.12em; text-transform: uppercase; }
+    .how-to-body { padding: 20px 18px; display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+    @media(max-width:560px) { .how-to-body,.result-meta { grid-template-columns: 1fr; } }
+    .step { display: flex; gap: 12px; }
+    .step-num { flex-shrink: 0; width: 26px; height: 26px; background: var(--orange); color: var(--black); font-family: var(--mono); font-size: 12px; font-weight: 700; display: flex; align-items: center; justify-content: center; }
+    .step-text strong { display: block; font-size: 13px; margin-bottom: 3px; }
+    .step-text p { font-size: 12px; color: var(--text-muted); line-height: 1.5; }
+
+    footer { border-top: 1px solid var(--border); width: 100%; padding: 14px 24px; text-align: center; font-family: var(--mono); font-size: 11px; color: var(--text-dim); position: relative; z-index: 1; margin-top: auto; }
+    footer span { color: var(--orange); }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="logo-bar">
+    <div class="logo-icon">📄</div>
+    <div class="logo-text">
+      <strong>Rezende Energia</strong>
+      Departamento Pessoal · DP/RH
+    </div>
+  </div>
+  <h1>Gerenciador de<br/><span>Informes DIRF</span></h1>
+  <p class="subtitle">Separe, junte e renomeie PDFs de Informe de Rendimentos para envio individual aos colaboradores.</p>
+</header>
+
+<main>
+
+  <div class="tabs-nav">
+    <button class="tab-btn active" data-tab="separar">✂ Separar</button>
+    <button class="tab-btn" data-tab="juntar">⊕ Juntar</button>
+    <button class="tab-btn" data-tab="renomear">✎ Renomear</button>
+  </div>
+
+  <!-- ══ TAB 1 — SEPARAR ══ -->
+  <div class="tab-panel active" id="tab-separar">
+    <div class="card">
+      <div class="card-header">
+        <span class="card-label"><span class="dot"></span>Separar PDFs por colaborador</span>
+        <span class="card-label" id="sep-count-lbl" style="display:none"></span>
+      </div>
+      <div class="card-body">
+        <div class="drop-zone" id="sep-drop">
+          <input type="file" id="sep-input" multiple accept=".pdf" />
+          <span class="drop-icon">📂</span>
+          <div class="drop-title">Arraste os PDFs ou clique para selecionar</div>
+          <div class="drop-sub">Suporta múltiplos arquivos · <strong>Informe 829</strong> · <strong>DIRF Folha</strong> · <strong>Informe Janeiro</strong></div>
+        </div>
+        <div class="file-list" id="sep-file-list"></div>
+        <div class="alert-error" id="sep-error"></div>
+        <div class="progress-wrap" id="sep-progress">
+          <div class="progress-top"><span id="sep-prog-lbl">Processando...</span></div>
+          <div class="progress-bar-bg"><div class="progress-bar-fill indeterminate" id="sep-prog-fill"></div></div>
+          <div class="progress-status" id="sep-prog-status">Enviando arquivos ao servidor...</div>
+        </div>
+        <button class="btn-primary" id="sep-btn" disabled>⚙ Processar e Separar PDFs</button>
+      </div>
+    </div>
+
+    <div id="sep-result" style="display:none;margin-top:0">
+      <div class="result-meta" id="sep-meta"></div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Nome</th><th>CPF</th><th style="text-align:right">Páginas</th></tr></thead>
+          <tbody id="sep-tbody"></tbody>
+        </table>
+      </div>
+      <div style="padding:16px 0 4px">
+        <div class="warn-section" id="sep-warn-sec">
+          <button class="warn-toggle" id="sep-warn-btn"></button>
+          <div class="warn-list" id="sep-warn-list"></div>
+        </div>
+        <a class="btn-outline" id="sep-download" href="#" download="informes_por_colaborador.zip">⬇ Baixar ZIP com todos os PDFs</a>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ TAB 2 — JUNTAR ══ -->
+  <div class="tab-panel" id="tab-juntar">
+    <div class="card">
+      <div class="card-header">
+        <span class="card-label"><span class="dot"></span>Juntar PDFs em um único arquivo</span>
+        <span class="card-label" id="mrg-count-lbl" style="display:none"></span>
+      </div>
+      <div class="card-body">
+        <div class="merge-hint">
+          <strong>Como funciona:</strong> Selecione dois ou mais PDFs. Arraste para reordenar. Defina o nome do arquivo final e clique em Juntar.
+        </div>
+        <div class="drop-zone" id="mrg-drop">
+          <input type="file" id="mrg-input" multiple accept=".pdf" />
+          <span class="drop-icon">📎</span>
+          <div class="drop-title">Arraste os PDFs ou clique para selecionar</div>
+          <div class="drop-sub">A <strong>ordem da lista</strong> define a ordem das páginas no PDF final</div>
+        </div>
+        <div class="file-list" id="mrg-file-list"></div>
+
+        <label class="field-label">Nome do arquivo final (.pdf)</label>
+        <input class="field-input" id="mrg-name" type="text" placeholder="ex: JOAO_SILVA_12345678900" />
+
+        <div class="alert-error" id="mrg-error"></div>
+        <div class="alert-success" id="mrg-success"></div>
+        <div class="progress-wrap" id="mrg-progress">
+          <div class="progress-top"><span>Juntando PDFs...</span></div>
+          <div class="progress-bar-bg"><div class="progress-bar-fill indeterminate"></div></div>
+          <div class="progress-status">Aguarde...</div>
+        </div>
+        <button class="btn-primary" id="mrg-btn" disabled>⊕ Juntar PDFs</button>
+        <a class="btn-outline" id="mrg-download" href="#" download="" style="display:none">⬇ Baixar PDF Unificado</a>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ TAB 3 — RENOMEAR ══ -->
+  <div class="tab-panel" id="tab-renomear">
+    <div class="card">
+      <div class="card-header">
+        <span class="card-label"><span class="dot"></span>Renomear arquivos PDF</span>
+        <span class="card-label" id="ren-count-lbl" style="display:none"></span>
+      </div>
+      <div class="card-body">
+        <p class="rename-info">
+          Selecione os PDFs, edite o novo nome de cada um e baixe o <strong>ZIP renomeado</strong>. Os arquivos originais não são alterados.
+        </p>
+        <div class="drop-zone" id="ren-drop">
+          <input type="file" id="ren-input" multiple accept=".pdf" />
+          <span class="drop-icon">✎</span>
+          <div class="drop-title">Selecione os PDFs para renomear</div>
+          <div class="drop-sub">Edite o novo nome de cada arquivo abaixo</div>
+        </div>
+        <div id="ren-list" style="margin-top:14px;display:flex;flex-direction:column;gap:5px"></div>
+        <div class="alert-error" id="ren-error"></div>
+        <div class="alert-success" id="ren-success"></div>
+        <div class="btn-row">
+          <button class="btn-sm" id="ren-clear-btn">✕ Limpar lista</button>
+        </div>
+        <button class="btn-primary" id="ren-btn" disabled>✎ Gerar ZIP Renomeado</button>
+        <a class="btn-outline" id="ren-download" href="#" download="pdfs_renomeados.zip" style="display:none">⬇ Baixar ZIP Renomeado</a>
+      </div>
+    </div>
+  </div>
+
+  <!-- HOW TO -->
+  <div class="how-to">
+    <div class="how-to-header">// Guia rápido</div>
+    <div class="how-to-body">
+      <div class="step">
+        <div class="step-num">✂</div>
+        <div class="step-text">
+          <strong>Separar</strong>
+          <p>Envia PDFs com múltiplos colaboradores. O sistema identifica cada um pelo CPF e gera um ZIP com um PDF por pessoa.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">⊕</div>
+        <div class="step-text">
+          <strong>Juntar</strong>
+          <p>Combina múltiplos PDFs em um único arquivo. Reordene arrastando e defina o nome antes de baixar.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">✎</div>
+        <div class="step-text">
+          <strong>Renomear</strong>
+          <p>Carregue PDFs já separados, edite o nome de cada um e baixe o ZIP com os arquivos prontos para envio.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">📦</div>
+        <div class="step-text">
+          <strong>Padrão de nomes</strong>
+          <p>Recomendado usar o padrão <code>NOME_CPF.pdf</code> para facilitar a identificação e distribuição individual.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</main>
+
+<footer>Rezende Energia · Gerenciador de Informes DIRF · <span>DP/RH</span></footer>
+
+<script>
+// ══════════════════════════ TABS ══════════════════════════
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
+  });
+});
+
+// ══════════════════════════ HELPERS ══════════════════════════
+function setupDrop(dropEl, inputEl, onFiles) {
+  ['dragenter','dragover'].forEach(e =>
+    dropEl.addEventListener(e, ev => { ev.preventDefault(); dropEl.classList.add('drag-over'); }));
+  ['dragleave','drop'].forEach(e =>
+    dropEl.addEventListener(e, ev => { ev.preventDefault(); dropEl.classList.remove('drag-over'); }));
+  dropEl.addEventListener('drop', ev => {
+    const files = [...ev.dataTransfer.files].filter(f => f.type === 'application/pdf');
+    if (files.length) onFiles(files);
+  });
+  inputEl.addEventListener('change', () => { onFiles([...inputEl.files]); inputEl.value = ''; });
+}
+function fmtSize(b) {
+  if (b < 1024) return b + ' B';
+  if (b < 1048576) return (b/1024).toFixed(0) + ' KB';
+  return (b/1048576).toFixed(1) + ' MB';
+}
+function showErr(el, msg) { el.textContent = '⚠ ' + msg; el.style.display = 'block'; }
+function showOk(el, msg)  { el.textContent = '✓ ' + msg; el.style.display = 'block'; }
+function hideEl(el) { el.style.display = 'none'; }
+function showEl(el, d) { el.style.display = d || 'block'; }
+function b64ToBlob(b64, mime) {
+  const s = atob(b64), a = new Uint8Array(s.length);
+  for (let i = 0; i < s.length; i++) a[i] = s.charCodeAt(i);
+  return new Blob([a], { type: mime });
+}
+
+// ══════════════════════════ TAB 1 — SEPARAR ══════════════════════════
+let sepFiles = [];
+const sep = {
+  drop: document.getElementById('sep-drop'),
+  input: document.getElementById('sep-input'),
+  list: document.getElementById('sep-file-list'),
+  countLbl: document.getElementById('sep-count-lbl'),
+  btn: document.getElementById('sep-btn'),
+  progress: document.getElementById('sep-progress'),
+  progFill: document.getElementById('sep-prog-fill'),
+  progLbl: document.getElementById('sep-prog-lbl'),
+  error: document.getElementById('sep-error'),
+  result: document.getElementById('sep-result'),
+  meta: document.getElementById('sep-meta'),
+  tbody: document.getElementById('sep-tbody'),
+  warnSec: document.getElementById('sep-warn-sec'),
+  warnBtn: document.getElementById('sep-warn-btn'),
+  warnList: document.getElementById('sep-warn-list'),
+  download: document.getElementById('sep-download'),
+};
+
+setupDrop(sep.drop, sep.input, files => {
+  files.forEach(f => { if (!sepFiles.find(x => x.name===f.name&&x.size===f.size)) sepFiles.push(f); });
+  renderSepList();
+});
+
+function renderSepList() {
+  sep.list.innerHTML = '';
+  sepFiles.forEach((f, i) => {
+    const div = document.createElement('div');
+    div.className = 'file-item';
+    div.innerHTML = `<span class="fi-icon">📄</span><span class="fi-name">${f.name}</span><span class="fi-size">${fmtSize(f.size)}</span><button class="fi-remove">×</button>`;
+    div.querySelector('.fi-remove').addEventListener('click', () => { sepFiles.splice(i,1); renderSepList(); });
+    sep.list.appendChild(div);
+  });
+  sep.btn.disabled = !sepFiles.length;
+  sep.countLbl.style.display = sepFiles.length ? '' : 'none';
+  sep.countLbl.textContent = sepFiles.length + ' arquivo(s)';
+  hideEl(sep.error);
+}
+
+sep.btn.addEventListener('click', async () => {
+  if (!sepFiles.length) return;
+  hideEl(sep.error); hideEl(sep.result);
+  showEl(sep.progress); sep.progFill.classList.add('indeterminate');
+  sep.progLbl.textContent = 'Enviando arquivos...'; sep.btn.disabled = true;
+
+  const fd = new FormData();
+  sepFiles.forEach(f => fd.append('pdfs', f));
+
+  try {
+    const res = await fetch('/api/process', { method: 'POST', body: fd });
+    const data = await res.json();
+    sep.progFill.classList.remove('indeterminate');
+    sep.progFill.style.width = '100%';
+
+    if (!res.ok) { showErr(sep.error, data.error || 'Erro no servidor.'); hideEl(sep.progress); return; }
+
+    sep.download.href = URL.createObjectURL(b64ToBlob(data.zip_b64, 'application/zip'));
+
+    sep.meta.innerHTML = `
+      <div class="meta-item"><span class="meta-value">${data.colaboradores}</span><span class="meta-key">Colaboradores</span></div>
+      <div class="meta-item"><span class="meta-value">${data.total_paginas}</span><span class="meta-key">Páginas Totais</span></div>
+      <div class="meta-item"><span class="meta-value">${sepFiles.length}</span><span class="meta-key">Arquivos Enviados</span></div>`;
+
+    sep.tbody.innerHTML = data.summary.map(r =>
+      `<tr><td class="td-nome">${r.nome}</td><td class="td-cpf">${r.cpf}</td><td class="td-pag"><span class="badge">${r.paginas}</span></td></tr>`
+    ).join('');
+
+    if (data.warnings?.length) {
+      showEl(sep.warnSec);
+      sep.warnBtn.textContent = `⚠ ${data.warnings.length} aviso(s) — clique para expandir`;
+      sep.warnList.innerHTML = data.warnings.map(w=>`<p>${w}</p>`).join('');
+    } else hideEl(sep.warnSec);
+
+    showEl(sep.result);
+    sep.result.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  } catch(e) {
+    showErr(sep.error, 'Falha na comunicação: ' + e.message);
+    hideEl(sep.progress);
+  } finally {
+    sep.btn.disabled = !sepFiles.length;
+  }
+});
+sep.warnBtn.addEventListener('click', () => sep.warnList.classList.toggle('open'));
+
+// ══════════════════════════ TAB 2 — JUNTAR ══════════════════════════
+let mrgFiles = [];
+let mrgDragSrc = null;
+const mrg = {
+  drop: document.getElementById('mrg-drop'),
+  input: document.getElementById('mrg-input'),
+  list: document.getElementById('mrg-file-list'),
+  countLbl: document.getElementById('mrg-count-lbl'),
+  btn: document.getElementById('mrg-btn'),
+  nameIn: document.getElementById('mrg-name'),
+  progress: document.getElementById('mrg-progress'),
+  error: document.getElementById('mrg-error'),
+  success: document.getElementById('mrg-success'),
+  download: document.getElementById('mrg-download'),
+};
+
+setupDrop(mrg.drop, mrg.input, files => {
+  files.forEach(f => { if (!mrgFiles.find(x => x.name===f.name&&x.size===f.size)) mrgFiles.push(f); });
+  renderMrgList();
+});
+
+function renderMrgList() {
+  mrg.list.innerHTML = '';
+  mrgFiles.forEach((f, i) => {
+    const div = document.createElement('div');
+    div.className = 'file-item'; div.draggable = true; div.dataset.idx = i;
+    div.innerHTML = `
+      <span class="fi-drag" title="Arrastar para reordenar">⠿</span>
+      <span class="fi-num">${i+1}</span>
+      <span class="fi-icon">📄</span>
+      <span class="fi-name">${f.name}</span>
+      <span class="fi-size">${fmtSize(f.size)}</span>
+      <button class="fi-remove">×</button>`;
+    div.querySelector('.fi-remove').addEventListener('click', () => { mrgFiles.splice(i,1); renderMrgList(); });
+    div.addEventListener('dragstart', e => { mrgDragSrc = i; e.dataTransfer.effectAllowed = 'move'; div.classList.add('dragging'); });
+    div.addEventListener('dragend',   () => { div.classList.remove('dragging'); mrg.list.querySelectorAll('.file-item').forEach(d => d.classList.remove('drag-target')); });
+    div.addEventListener('dragover',  e => { e.preventDefault(); div.classList.add('drag-target'); });
+    div.addEventListener('dragleave', () => div.classList.remove('drag-target'));
+    div.addEventListener('drop', e => {
+      e.preventDefault(); div.classList.remove('drag-target');
+      if (mrgDragSrc !== null && mrgDragSrc !== i) {
+        const moved = mrgFiles.splice(mrgDragSrc, 1)[0];
+        mrgFiles.splice(i, 0, moved);
+        renderMrgList();
+      }
+    });
+    mrg.list.appendChild(div);
+  });
+  mrg.btn.disabled = mrgFiles.length < 2;
+  mrg.countLbl.style.display = mrgFiles.length ? '' : 'none';
+  mrg.countLbl.textContent = mrgFiles.length + ' arquivo(s)';
+  hideEl(mrg.error); hideEl(mrg.success); hideEl(mrg.download);
+}
+
+mrg.btn.addEventListener('click', async () => {
+  if (mrgFiles.length < 2) { showErr(mrg.error, 'Selecione pelo menos 2 arquivos.'); return; }
+  hideEl(mrg.error); hideEl(mrg.success); hideEl(mrg.download);
+  showEl(mrg.progress); mrg.btn.disabled = true;
+
+  const fd = new FormData();
+  mrgFiles.forEach(f => fd.append('pdfs', f));
+  const name = (mrg.nameIn.value.trim() || 'documento_unificado').replace(/\.pdf$/i,'');
+  fd.append('filename', name + '.pdf');
+
+  try {
+    const res = await fetch('/api/merge', { method: 'POST', body: fd });
+    const data = await res.json();
+    hideEl(mrg.progress);
+    if (!res.ok) { showErr(mrg.error, data.error || 'Erro no servidor.'); return; }
+
+    mrg.download.href = URL.createObjectURL(b64ToBlob(data.pdf_b64, 'application/pdf'));
+    mrg.download.download = name + '.pdf';
+    showEl(mrg.download);
+    showOk(mrg.success, `PDF gerado com ${data.total_pages} página(s) a partir de ${mrgFiles.length} arquivo(s).`);
+  } catch(e) {
+    showErr(mrg.error, 'Falha: ' + e.message); hideEl(mrg.progress);
+  } finally {
+    mrg.btn.disabled = mrgFiles.length < 2;
+  }
+});
+
+// ══════════════════════════ TAB 3 — RENOMEAR ══════════════════════════
+let renFiles = [], renNames = [];
+const ren = {
+  drop: document.getElementById('ren-drop'),
+  input: document.getElementById('ren-input'),
+  list: document.getElementById('ren-list'),
+  countLbl: document.getElementById('ren-count-lbl'),
+  btn: document.getElementById('ren-btn'),
+  error: document.getElementById('ren-error'),
+  success: document.getElementById('ren-success'),
+  download: document.getElementById('ren-download'),
+};
+
+setupDrop(ren.drop, ren.input, files => {
+  files.forEach(f => {
+    if (!renFiles.find(x => x.name===f.name&&x.size===f.size)) {
+      renFiles.push(f);
+      renNames.push(f.name.replace(/\.pdf$/i,''));
+    }
+  });
+  renderRenList();
+});
+
+document.getElementById('ren-clear-btn').addEventListener('click', () => { renFiles=[]; renNames=[]; renderRenList(); });
+
+function renderRenList() {
+  ren.list.innerHTML = '';
+  renFiles.forEach((f, i) => {
+    const row = document.createElement('div');
+    row.className = 'rename-item';
+    row.innerHTML = `
+      <span class="fi-icon">📄</span>
+      <span class="fi-name" style="max-width:160px;min-width:60px">${f.name}</span>
+      <span class="rename-arrow">→</span>
+      <input class="fi-rename-input" data-idx="${i}" value="${renNames[i]}" placeholder="novo nome" />
+      <span class="fi-ext">.pdf</span>
+      <button class="fi-remove">×</button>`;
+    row.querySelector('input').addEventListener('input', e => { renNames[i] = e.target.value; });
+    row.querySelector('.fi-remove').addEventListener('click', () => { renFiles.splice(i,1); renNames.splice(i,1); renderRenList(); });
+    ren.list.appendChild(row);
+  });
+  ren.btn.disabled = !renFiles.length;
+  ren.countLbl.style.display = renFiles.length ? '' : 'none';
+  ren.countLbl.textContent = renFiles.length + ' arquivo(s)';
+  hideEl(ren.error); hideEl(ren.success); hideEl(ren.download);
+}
+
+ren.btn.addEventListener('click', async () => {
+  if (!renFiles.length) return;
+  hideEl(ren.error); hideEl(ren.success); hideEl(ren.download);
+  ren.btn.disabled = true; ren.btn.textContent = '⏳ Gerando...';
+
+  const fd = new FormData();
+  renFiles.forEach((f, i) => {
+    fd.append('pdfs', f);
+    fd.append('names', (renNames[i] || f.name.replace(/\.pdf$/i,'')) + '.pdf');
+  });
+
+  try {
+    const res = await fetch('/api/rename', { method: 'POST', body: fd });
+    const data = await res.json();
+    if (!res.ok) { showErr(ren.error, data.error || 'Erro no servidor.'); return; }
+
+    ren.download.href = URL.createObjectURL(b64ToBlob(data.zip_b64, 'application/zip'));
+    showEl(ren.download);
+    showOk(ren.success, `${renFiles.length} arquivo(s) renomeado(s) com sucesso.`);
+  } catch(e) {
+    showErr(ren.error, 'Falha: ' + e.message);
+  } finally {
+    ren.btn.disabled = false;
+    ren.btn.textContent = '✎ Gerar ZIP Renomeado';
+  }
+});
+</script>
+</body>
+</html>
