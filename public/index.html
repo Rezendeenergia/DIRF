@@ -450,11 +450,20 @@ sep.btn.addEventListener('click', async () => {
 
   try {
     const res = await fetch('/api/process', { method: 'POST', body: fd });
-    const data = await res.json();
     sep.progFill.classList.remove('indeterminate');
     sep.progFill.style.width = '100%';
 
-    if (!res.ok) { showErr(sep.error, data.error || 'Erro no servidor.'); hideEl(sep.progress); return; }
+    if (!res.ok) {
+      let errMsg = `Erro ${res.status}`;
+      if (res.status === 413) {
+        errMsg = 'Arquivo muito grande para envio. O limite é de 4,5 MB por vez. Divida o PDF em partes menores e tente novamente.';
+      } else {
+        try { const e = await res.json(); errMsg = e.error || errMsg; } catch {}
+      }
+      showErr(sep.error, errMsg); hideEl(sep.progress); return;
+    }
+
+    const data = await res.json();
 
     sep.download.href = URL.createObjectURL(b64ToBlob(data.zip_b64, 'application/zip'));
 
@@ -550,9 +559,17 @@ mrg.btn.addEventListener('click', async () => {
 
   try {
     const res = await fetch('/api/merge', { method: 'POST', body: fd });
-    const data = await res.json();
     hideEl(mrg.progress);
-    if (!res.ok) { showErr(mrg.error, data.error || 'Erro no servidor.'); return; }
+    if (!res.ok) {
+      let errMsg = `Erro ${res.status}`;
+      if (res.status === 413) {
+        errMsg = 'Arquivos muito grandes para envio. O limite é de 4,5 MB por vez. Reduza a quantidade de arquivos e tente novamente.';
+      } else {
+        try { const e = await res.json(); errMsg = e.error || errMsg; } catch {}
+      }
+      showErr(mrg.error, errMsg); return;
+    }
+    const data = await res.json();
 
     mrg.download.href = URL.createObjectURL(b64ToBlob(data.pdf_b64, 'application/pdf'));
     mrg.download.download = name + '.pdf';
