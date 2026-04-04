@@ -1,3 +1,4 @@
+<!-- build:1775307496 -->
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
@@ -335,79 +336,79 @@ async function extractAllPagesText(file) {
 }
 
 function extractCollaborator(text) {
-  const CPF_PAT  = String.raw`(\d{3}[.\s]?\d{3}[.\s]?\d{3}[-\.\s]?\d{2})`;
-  const NAME_PAT = String.raw`([A-Z\u00C0-\u00FF][A-Z\u00C0-\u00FFa-z\u00C0-\u00FF .'-]{2,80})`;
-  const CPF_RE   = new RegExp(CPF_PAT, 'g');
-  const CNPJ_RE  = /\b\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2}\b/g;
-  const IGNORE   = new Set(['03356745182']);
-  const norm     = c => c.replace(/\D/g,'');
-  // \s+ below matches both spaces and newlines — works regardless of how pdf.js joins text
-  const S = String.raw`[\s\S]{0,80}?`; // lazy wildcard between label and value
+  const norm = c => c.replace(/\D/g,'');
+  const IGNORE = new Set(['03356745182']);
 
-  // Formato 1: Informe 829  "C.P.F.   NOME COMPLETO \n 000.111... FULANO"
-  let m = text.match(new RegExp(
-    String.raw`C\.P\.F\.\s+NOME\s+COMPLETO` + S +
-    CPF_PAT + String.raw`\s+` + NAME_PAT
-  ));
-  if (m) return { cpf: norm(m[1]), nome: m[2].trim() };
+  // ── Log first 600 chars of page text to console so we can see what pdf.js gives us
+  if (window._sepDebug) console.log('[SEP] page text sample:\n', text.slice(0, 600));
 
-  // Formato 2: DIRF Folha  "INFORMAÇÃO DO BENEFICIÁRIO ... CPF: 000... Nome: 180 - FULANO"
-  m = text.match(new RegExp(
-    String.raw`INFORMA[\u00C7C][\u00C3A]O\s+DO\s+BENEFICI[\u00C1A]RIO` + S +
-    String.raw`CPF:\s*` + CPF_PAT +
-    String.raw`\s+Nome:\s*\d+\s*-\s*` + NAME_PAT
-  ));
-  if (m) return { cpf: norm(m[1]), nome: m[2].trim() };
+  // CPF pattern — accepts digits with optional separators
+  const CPF = String.raw`(\d{3}[\.\s]?\d{3}[\.\s]?\d{3}[-\.\s]?\d{2})`;
+  // Name pattern — letters/accents/spaces, 3-80 chars
+  const NM  = String.raw`([A-Z\u00C0-\u00FF][A-Z\u00C0-\u00FFa-z\u00C0-\u00FF .'-]{2,80})`;
 
-  // Formato 2b: DIRF sem número antes do nome  "Nome: FULANO"
-  m = text.match(new RegExp(
-    String.raw`INFORMA[\u00C7C][\u00C3A]O\s+DO\s+BENEFICI[\u00C1A]RIO` + S +
-    String.raw`CPF:\s*` + CPF_PAT +
-    String.raw`\s+Nome:\s*` + NAME_PAT
-  ));
-  if (m) return { cpf: norm(m[1]), nome: m[2].trim() };
+  // ── Formato 2: DIRF Folha ──────────────────────────────────────────────────
+  // Matches:  "INFORMAÇÃO DO BENEFICIÁRIO DO DECLARANTE"
+  // followed (anywhere in next 200 chars) by: CPF: xxx   Nome: NN - NOME
+  let m = text.match(
+    /INFORMA[\u00C7C][\u00C3A]O\s+DO\s+BENEFICI[\u00C1A]RIO[\s\S]{0,200}?CPF:\s*(\d{3}[\.\s]?\d{3}[\.\s]?\d{3}[-\.\s]?\d{2})\s+Nome:\s*[\d\s-]*([A-Z\u00C0-\u00FF][A-Z\u00C0-\u00FFa-z\u00C0-\u00FF .''-]{2,80})/
+  );
+  if (m) { if (window._sepDebug) console.log('[SEP] Fmt2 match:', m[1], m[2]); return { cpf: norm(m[1]), nome: m[2].trim() }; }
 
-  // Formato 3: Informe Janeiro  "CPF:   Nome Completo: \n 000... FULANO"
-  m = text.match(new RegExp(
-    String.raw`CPF:\s+Nome\s+Completo:` + S +
-    CPF_PAT + String.raw`\s+` + NAME_PAT
-  ));
-  if (m) return { cpf: norm(m[1]), nome: m[2].trim() };
+  // ── Formato 2b: CPF + Nome na mesma linha sem número ──────────────────────
+  m = text.match(
+    /INFORMA[\u00C7C][\u00C3A]O\s+DO\s+BENEFICI[\u00C1A]RIO[\s\S]{0,200}?CPF:\s*(\d{3}[\.\s]?\d{3}[\.\s]?\d{3}[-\.\s]?\d{2})\s+Nome:\s*([A-Z\u00C0-\u00FF][A-Z\u00C0-\u00FFa-z\u00C0-\u00FF .''-]{2,80})/
+  );
+  if (m) { if (window._sepDebug) console.log('[SEP] Fmt2b match:', m[1], m[2]); return { cpf: norm(m[1]), nome: m[2].trim() }; }
 
-  // Formato 4: Cédula C  "CPF    Nome Completo \n 000..., FULANO"
-  m = text.match(new RegExp(
-    String.raw`CPF\s+Nome\s+Completo` + S +
-    CPF_PAT + String.raw`[,\s]+` + NAME_PAT
-  ));
-  if (m) return { cpf: norm(m[1]), nome: m[2].trim().replace(/,\s*$/, '') };
+  // ── Formato 1: Informe 829 ────────────────────────────────────────────────
+  m = text.match(
+    /C\.P\.F\.\s+NOME\s+COMPLETO[\s\S]{0,80}?(\d{3}[\.\s]?\d{3}[\.\s]?\d{3}[-\.\s]?\d{2})\s+([A-Z\u00C0-\u00FF][A-Z\u00C0-\u00FFa-z\u00C0-\u00FF .''-]{2,80})/
+  );
+  if (m) { if (window._sepDebug) console.log('[SEP] Fmt1 match:', m[1], m[2]); return { cpf: norm(m[1]), nome: m[2].trim() }; }
 
-  // Formato 5: genérico  "CPF: 000..." seguido de nome na mesma ou próxima linha
-  m = text.match(new RegExp(
-    String.raw`\bCPF[:\s]+` + CPF_PAT +
-    String.raw`[\s\n]+` + NAME_PAT
-  ));
-  if (m) { const n = norm(m[1]); if (!IGNORE.has(n)) return { cpf: n, nome: m[2].trim() }; }
+  // ── Formato 3: Informe Janeiro ────────────────────────────────────────────
+  m = text.match(
+    /CPF:\s+Nome\s+Completo:[\s\S]{0,80}?(\d{3}[\.\s]?\d{3}[\.\s]?\d{3}[-\.\s]?\d{2})\s+([A-Z\u00C0-\u00FF][A-Z\u00C0-\u00FFa-z\u00C0-\u00FF .''-]{2,80})/
+  );
+  if (m) { if (window._sepDebug) console.log('[SEP] Fmt3 match:', m[1], m[2]); return { cpf: norm(m[1]), nome: m[2].trim() }; }
 
+  // ── Formato 4: Cédula C ───────────────────────────────────────────────────
+  m = text.match(
+    /CPF\s+Nome\s+Completo[\s\S]{0,80}?(\d{3}[\.\s]?\d{3}[\.\s]?\d{3}[-\.\s]?\d{2})[,\s]+([A-Z\u00C0-\u00FF][A-Z\u00C0-\u00FFa-z\u00C0-\u00FF .''-]{2,80})/
+  );
+  if (m) { if (window._sepDebug) console.log('[SEP] Fmt4 match:', m[1], m[2]); return { cpf: norm(m[1]), nome: m[2].trim().replace(/,\s*$/, '') }; }
+
+  // ── Fallbacks ─────────────────────────────────────────────────────────────
+  const CNPJ_RE = /\b\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2}\b/g;
+  const CPF_RE  = /\b(\d{3}[\.\s]?\d{3}[\.\s]?\d{3}[-\.\s]?\d{2})\b/g;
   const cnpjSet = new Set([...text.matchAll(CNPJ_RE)].map(x => x[0].replace(/\D/g,'')));
 
-  // Fallback 1: linha isolada  "000.111.222-33  NOME EM MAIÚSCULAS"
+  // Fallback 1: linha isolada "CPF NOME EM MAIÚSCULAS"
   for (const line of text.split(/\n/)) {
-    const lm = line.trim().match(new RegExp(
-      String.raw`^` + CPF_PAT + String.raw`\s+([A-Z\u00C0-\u00FF][A-Z\u00C0-\u00FF ]{2,})$`
-    ));
+    const lm = line.trim().match(/^(\d{3}[\.\s]?\d{3}[\.\s]?\d{3}[-\.\s]?\d{2})\s+([A-Z\u00C0-\u00FF][A-Z\u00C0-\u00FF ]{2,})$/);
     if (lm) {
       const n = norm(lm[1]);
-      if (!IGNORE.has(n) && !cnpjSet.has(n)) return { cpf: n, nome: lm[2].trim() };
+      if (!IGNORE.has(n) && !cnpjSet.has(n)) {
+        if (window._sepDebug) console.log('[SEP] FB1 match:', n, lm[2]);
+        return { cpf: n, nome: lm[2].trim() };
+      }
     }
   }
 
-  // Fallback 2: qualquer CPF válido
+  // Fallback 2: qualquer CPF não-ignorado e não-CNPJ
   for (const c of text.matchAll(CPF_RE)) {
     const n = norm(c[1]);
-    if (!IGNORE.has(n) && !cnpjSet.has(n)) return { cpf: n, nome: null };
+    if (!IGNORE.has(n) && !cnpjSet.has(n)) {
+      if (window._sepDebug) console.log('[SEP] FB2 CPF only:', n);
+      return { cpf: n, nome: null };
+    }
   }
   return null;
 }
+
+// Enable debug logging to console
+window._sepDebug = true;
 
 // ══════════════════════════ TABS ══════════════════════════
 document.querySelectorAll('.tab-btn').forEach(btn => {
