@@ -343,6 +343,24 @@ function extractCollaborator(text) {
   const CPF_P   = String.raw`(\d{3}[\.\s]?\d{3}[\.\s]?\d{3}[-\.\s]?\d{2})`;
   const NAME_P  = String.raw`([A-Z\u00C0-\u00FF][A-Z\u00C0-\u00FFa-z\u00C0-\u00FF .'-]{2,70})`;
 
+  // ── 1. Informe Oficial Receita Federal (NOVO BLOCO DE CORREÇÃO) ───────────
+  // Foca no bloco "Beneficiária dos Rendimentos", absorvendo a desordem do pdf.js
+  const mReceita = text.match(new RegExp(
+    String.raw`Benefici[aá]ri[ao]\s+dos\s+Rendimentos[\s\S]{1,150}?` + 
+    CPF_P + 
+    String.raw`\s+(?:Nome\s+Completo:\s*)?` + 
+    NAME_P, 
+    'i'
+  ));
+
+  if (mReceita) {
+    const nomeExtraido = mReceita[2].trim();
+    // Garante que não capturou acidentalmente a próxima linha (ex: "Natureza do Rendimento")
+    if (!/^Natureza/i.test(nomeExtraido) && !/^Rendimentos/i.test(nomeExtraido)) {
+      return { cpf: norm(mReceita[1]), nome: nomeExtraido };
+    }
+  }
+
   // ── DIRF Folha ────────────────────────────────────────────────────────────
   const benefBlock = text.match(
     /INFORMA[\u00C7C][\u00C3A]O\s+DO\s+BENEFICI[\u00C1A]RIO\s+DO\s+DECLARANTE([\s\S]{0,300})/
@@ -373,10 +391,6 @@ function extractCollaborator(text) {
   if (m) return { cpf: norm(m[1]), nome: m[2].trim() };
 
   // ── Informe Janeiro ───────────────────────────────────────────────────────
-  // Layout: "CPF:  Nome Completo:" on one line, "000.xxx NOME" on next line
-  // OR all on one line. OR CPF and Nome on separate lines.
-  // Strategy: find the "Pessoa Física Beneficiária" block, then extract CPF+Nome
-
   const pessoaBlock = text.match(
     /Pessoa\s+F[ií]sica\s+Benefici[aá]ria[\s\S]{0,20}?\n([\s\S]{0,300}?)(?:\nNatureza|\n3\.)/
   );
@@ -407,7 +421,8 @@ function extractCollaborator(text) {
 
   // Fallback 1: linha isolada "CPF NOME EM MAIÚSCULAS"
   for (const line of text.split(/\n/)) {
-    const lm = line.trim().match(new RegExp(
+    const cleanLine = line.replace(/CPF:|Nome\s+Completo:/gi, '').trim();
+    const lm = cleanLine.match(new RegExp(
       String.raw`^` + CPF_P + String.raw`\s+([A-Z\u00C0-\u00FF][A-Z\u00C0-\u00FF\u00C0-\u00FF ]{2,})$`
     ));
     if (lm) {
