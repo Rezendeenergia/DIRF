@@ -101,8 +101,7 @@ def sanitize_filename(name: str) -> str:
 # Routes
 # ──────────────────────────────────────────────
 
-@app.route("/")
-def index():
+def _serve_html():
     html_path = os.path.join(PUBLIC_DIR, 'index.html')
     with open(html_path, encoding="utf-8") as f:
         html = f.read()
@@ -111,7 +110,16 @@ def index():
     resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
     resp.headers["Pragma"]        = "no-cache"
     resp.headers["Expires"]       = "0"
+    resp.headers["Surrogate-Control"] = "no-store"
     return resp
+
+@app.route("/")
+def index():
+    return _serve_html()
+
+@app.route("/app")
+def app_page():
+    return _serve_html()
 
 @app.route("/images/<path:filename>")
 def serve_image(filename):
