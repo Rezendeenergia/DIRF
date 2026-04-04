@@ -1,19 +1,21 @@
 import base64
 import io
+import os
 import re
 import zipfile
 from collections import defaultdict
 
 import pdfplumber
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, send_from_directory
 from pypdf import PdfReader, PdfWriter
 
-import os
+# Resolve paths relative to this file's directory (works on Render)
+BASE_DIR    = os.path.dirname(os.path.abspath(__file__))
+PUBLIC_DIR  = os.path.join(BASE_DIR, '..', 'public')
+IMAGES_DIR  = os.path.join(PUBLIC_DIR, 'images')
 
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-
-app = Flask(__name__, static_folder=os.path.join(BASE_DIR, "public"), static_url_path="")
-app.config["MAX_CONTENT_LENGTH"] = 200 * 1024 * 1024  # 200 MB
+app = Flask(__name__, static_folder=None)
+app.config["MAX_CONTENT_LENGTH"] = 100 * 1024 * 1024  # 100 MB
 
 # ──────────────────────────────────────────────
 # Regex helpers
@@ -76,7 +78,13 @@ def sanitize_filename(name: str) -> str:
 
 @app.route("/")
 def index():
-    return app.send_static_file("index.html")
+    html_path = os.path.join(PUBLIC_DIR, 'index.html')
+    with open(html_path, encoding="utf-8") as f:
+        return f.read()
+
+@app.route("/images/<path:filename>")
+def serve_image(filename):
+    return send_from_directory(IMAGES_DIR, filename)
 
 
 # ── SEPARAR ──────────────────────────────────
