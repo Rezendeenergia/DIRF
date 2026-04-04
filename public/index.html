@@ -337,72 +337,69 @@ async function extractAllPagesText(file) {
 
 function extractCollaborator(text) {
   const norm = c => c.replace(/\D/g,'');
-  const IGNORE = new Set(['03356745182']);
+  const IGNORE  = new Set(['03356745182']);
   const CNPJ_RE = /\b\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2}\b/g;
   const CPF_RE  = /\b(\d{3}[\.\s]?\d{3}[\.\s]?\d{3}[-\.\s]?\d{2})\b/g;
   const CPF_P   = String.raw`(\d{3}[\.\s]?\d{3}[\.\s]?\d{3}[-\.\s]?\d{2})`;
-  const NAME_P  = String.raw`([A-Z\u00C0-\u00FF][A-Z\u00C0-\u00FFa-z\u00C0-\u00FF .']{2,70})`;
+  const NAME_P  = String.raw`([A-Z\u00C0-\u00FF][A-Z\u00C0-\u00FFa-z\u00C0-\u00FF .'-]{2,70})`;
 
-  // ── Formato DIRF Folha ────────────────────────────────────────────────────
-  // pdf.js extrai: "INFORMAÇÃO DO BENEFICIÁRIO DO DECLARANTE\nCPF:  Nome:  74 - IRANILDO... 979.220.482-20"
-  // → Nome aparece ANTES do CPF na string extraída
+  // ── DIRF Folha ────────────────────────────────────────────────────────────
+  // pdfplumber: "CPF: 000.020.872-86 Nome: 180 - BRUNO AUGUSTO DOS SANTOS MONTEIRO"
+  // pdf.js:     "CPF:   Nome:   180 - BRUNO AUGUSTO DOS SANTOS MONTEIRO 000.020.872-86"
   const benefBlock = text.match(
     /INFORMA[\u00C7C][\u00C3A]O\s+DO\s+BENEFICI[\u00C1A]RIO\s+DO\s+DECLARANTE([\s\S]{0,300})/
   );
   if (benefBlock) {
     const blk = benefBlock[1];
-    // Caso A: "Nome: NN - NOME CPF" (nome vem antes — pdf.js)
-    let bm = blk.match(
-      new RegExp(String.raw`Nome:\s*(?:\d+\s*-\s*)?` + NAME_P + String.raw`\s+` + CPF_P)
-    );
+    // Caso A: pdf.js — "Nome: NN - NOME CPF_NO_FIM"
+    let bm = blk.match(new RegExp(
+      String.raw`Nome:\s*(?:\d+\s*-\s*)?` + NAME_P + String.raw`\s+` + CPF_P
+    ));
     if (bm) return { cpf: norm(bm[2]), nome: bm[1].trim() };
-
-    // Caso B: "CPF: xxx Nome: NN - NOME" (ordem original — pdfplumber/server)
-    bm = blk.match(
-      new RegExp(String.raw`CPF:\s*` + CPF_P + String.raw`\s+Nome:\s*(?:\d+\s*-\s*)?` + NAME_P)
-    );
+    // Caso B: pdfplumber — "CPF: NNN Nome: NN - NOME"
+    bm = blk.match(new RegExp(
+      String.raw`CPF:\s*` + CPF_P + String.raw`\s+Nome:\s*(?:\d+\s*-\s*)?` + NAME_P
+    ));
     if (bm) return { cpf: norm(bm[1]), nome: bm[2].trim() };
-
-    // Caso C: CPF e Nome na linha separados de qualquer forma
+    // Caso C: qualquer CPF + Nome no bloco
     const cpfM  = blk.match(new RegExp(CPF_P));
-    const nameM = blk.match(/Nome:\s*(?:\d+\s*-\s*)?([A-Z\u00C0-\u00FF][A-Z\u00C0-\u00FFa-z\u00C0-\u00FF .']{2,70})/);
+    const nameM = blk.match(/Nome:\s*(?:\d+\s*-\s*)?([A-Z\u00C0-\u00FF][A-Z\u00C0-\u00FFa-z\u00C0-\u00FF .'-]{2,70})/);
     if (cpfM && nameM) return { cpf: norm(cpfM[1]), nome: nameM[1].trim() };
     if (cpfM) return { cpf: norm(cpfM[1]), nome: null };
   }
 
-  // ── Formato 1: Informe 829 ────────────────────────────────────────────────
-  let m = text.match(
-    new RegExp(String.raw`C\.P\.F\.\s+NOME\s+COMPLETO[\s\S]{0,80}?` + CPF_P + String.raw`\s+` + NAME_P)
-  );
+  // ── Informe 829 ───────────────────────────────────────────────────────────
+  // pdfplumber: "C.P.F. NOME COMPLETO\n087.525.722-42 ABIMAEL DA SILVA SAMBRANO"
+  // pdf.js: same structure with Y-position reconstruction
+  let m = text.match(new RegExp(
+    String.raw`C\.P\.F\.\s+NOME\s+COMPLETO[\s\S]{0,80}?` + CPF_P + String.raw`\s+` + NAME_P
+  ));
   if (m) return { cpf: norm(m[1]), nome: m[2].trim() };
 
-  // ── Formato 3: Informe Janeiro ────────────────────────────────────────────
-  m = text.match(
-    new RegExp(String.raw`CPF:\s+Nome\s+Completo:[\s\S]{0,80}?` + CPF_P + String.raw`\s+` + NAME_P)
-  );
+  // ── Informe Janeiro ───────────────────────────────────────────────────────
+  // pdfplumber: "CPF: Nome Completo:\n000.235.472-19 MARCOS ANDRE MENDES PEREIRA"
+  // pdf.js: "CPF: Nome Completo:\n000.235.472-19 MARCOS..." OR "CPF: Nome Completo: 000... NOME"
+  // Key insight: labels "CPF:" and "Nome Completo:" appear on SAME line, value on NEXT line
+  m = text.match(new RegExp(
+    String.raw`CPF:\s+Nome\s+Completo:\s*\n?\s*` + CPF_P + String.raw`\s+` + NAME_P
+  ));
   if (m) return { cpf: norm(m[1]), nome: m[2].trim() };
-
-  // ── Formato 4: Cédula C ───────────────────────────────────────────────────
-  m = text.match(
-    new RegExp(String.raw`CPF\s+Nome\s+Completo[\s\S]{0,80}?` + CPF_P + String.raw`[,\s]+` + NAME_P)
-  );
-  if (m) return { cpf: norm(m[1]), nome: m[2].trim().replace(/,\s*$/, '') };
 
   // ── Fallbacks ─────────────────────────────────────────────────────────────
   const cnpjSet = new Set([...text.matchAll(CNPJ_RE)].map(x => x[0].replace(/\D/g,'')));
 
   // Fallback 1: linha isolada "CPF NOME EM MAIÚSCULAS"
   for (const line of text.split(/\n/)) {
-    const lm = line.trim().match(
-      new RegExp(String.raw`^` + CPF_P + String.raw`\s+([A-Z\u00C0-\u00FF][A-Z\u00C0-\u00FF ]{2,})$`)
-    );
+    const lm = line.trim().match(new RegExp(
+      String.raw`^` + CPF_P + String.raw`\s+([A-Z\u00C0-\u00FF][A-Z\u00C0-\u00FF\u00C0-\u00FF ]{2,})$`
+    ));
     if (lm) {
       const n = norm(lm[1]);
       if (!IGNORE.has(n) && !cnpjSet.has(n)) return { cpf: n, nome: lm[2].trim() };
     }
   }
 
-  // Fallback 2: qualquer CPF válido não ignorado
+  // Fallback 2: qualquer CPF válido
   for (const c of text.matchAll(CPF_RE)) {
     const n = norm(c[1]);
     if (!IGNORE.has(n) && !cnpjSet.has(n)) return { cpf: n, nome: null };
@@ -411,7 +408,7 @@ function extractCollaborator(text) {
 }
 
 // Enable debug logging to console
-window._sepDebug = true;
+window._sepDebug = false;
 
 // ══════════════════════════ TABS ══════════════════════════
 document.querySelectorAll('.tab-btn').forEach(btn => {
@@ -500,14 +497,6 @@ sep.btn.addEventListener('click', async () => {
     // ── Step 2: identify collaborator per page ──────────
     sep.progLbl.textContent = 'Identificando colaboradores...';
 
-    // DEBUG: show first page text visually on screen
-    if (allPageTexts.length > 0 && allPageTexts[0].length > 0) {
-      const dbgDiv = document.createElement('pre');
-      dbgDiv.id = 'sep-debug-text';
-      dbgDiv.style.cssText = 'background:#1a1a1a;color:#0f0;font-size:10px;padding:10px;max-height:200px;overflow:auto;white-space:pre-wrap;border:1px solid #333;margin-top:10px;font-family:monospace';
-      dbgDiv.textContent = '[PÁGINA 1 RAW]\n' + allPageTexts[0][0].slice(0, 800);
-      sep.progress.after(dbgDiv);
-    }
     let pagesProcessed = 0;
 
     for (let fi = 0; fi < allPageTexts.length; fi++) {
