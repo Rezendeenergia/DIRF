@@ -478,7 +478,7 @@ sep.btn.addEventListener('click', async () => {
 
       const outDoc = await PDFLib.PDFDocument.create();
       for (const { fi, pi } of data.pages) {
-        const [copiedPage] = await outDoc.copyPagesFrom(srcDocs[fi], [pi]);
+        const [copiedPage] = await outDoc.copyPages(srcDocs[fi], [pi]);
         outDoc.addPage(copiedPage);
       }
       const pdfBytes = await outDoc.save();
@@ -580,7 +580,8 @@ mrg.btn.addEventListener('click', async () => {
     for (const f of mrgFiles) {
       const ab  = await f.arrayBuffer();
       const src = await PDFLib.PDFDocument.load(ab, { ignoreEncryption: true });
-      const copied = await outDoc.copyPagesFrom(src, src.getPageIndices());
+      const indices = src.getPageIndices();
+      const copied  = await outDoc.copyPages(src, indices);
       copied.forEach(p => outDoc.addPage(p));
       total += src.getPageCount();
     }
