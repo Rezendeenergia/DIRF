@@ -30,10 +30,12 @@ def normalize_cpf(cpf: str) -> str:
 
 
 def extract_collaborator(text: str) -> tuple:
+    NAME = r'[\wÁÉÍÓÚÂÊÎÔÛÃÕÀÈÌÒÙÇáéíóúâêîôûãõàèìòùç ]+'
+
     # Formato 1: Informe 829
     m = re.search(
-        r'C\.P\.F\.\s+NOME COMPLETO\s*\n\s*(\d{3}[\.\s]?\d{3}[\.\s]?\d{3}[-\.\s]?\d{2})\s+'
-        r'([\wÁÉÍÓÚÂÊÎÔÛÃÕÀÈÌÒÙÇáéíóúâêîôûãõàèìòùç ]+)',
+        r'C\.P\.F\.\s+NOME COMPLETO[\s\S]{0,30}?\n?\s*'
+        r'(\d{3}[.\s]?\d{3}[.\s]?\d{3}[-\.\s]?\d{2})\s+(' + NAME + r')',
         text,
     )
     if m:
@@ -41,9 +43,8 @@ def extract_collaborator(text: str) -> tuple:
 
     # Formato 2: DIRF Folha
     m = re.search(
-        r'INFORMAÇÃO DO BENEFICIÁRIO DO DECLARANTE\s*\n\s*CPF:\s*'
-        r'(\d{3}[\.\s]?\d{3}[\.\s]?\d{3}[-\.\s]?\d{2})\s+Nome:\s*\d+\s*-\s*'
-        r'([\wÁÉÍÓÚÂÊÎÔÛÃÕÀÈÌÒÙÇáéíóúâêîôûãõàèìòùç ]+)',
+        r'INFORMA[ÇC][ÃA]O DO BENEFICI[ÁA]RIO[\s\S]{0,50}?'
+        r'CPF:\s*(\d{3}[.\s]?\d{3}[.\s]?\d{3}[-\.\s]?\d{2})\s+Nome:\s*\d+\s*-\s*(' + NAME + r')',
         text,
     )
     if m:
@@ -51,18 +52,42 @@ def extract_collaborator(text: str) -> tuple:
 
     # Formato 3: Informe Janeiro
     m = re.search(
-        r'CPF:\s+Nome Completo:\s*\n\s*(\d{3}[\.\s]?\d{3}[\.\s]?\d{3}[-\.\s]?\d{2})\s+'
-        r'([\wÁÉÍÓÚÂÊÎÔÛÃÕÀÈÌÒÙÇáéíóúâêîôûãõàèìòùç ]+)',
+        r'CPF:\s+Nome Completo:[\s\S]{0,30}?\n?\s*'
+        r'(\d{3}[.\s]?\d{3}[.\s]?\d{3}[-\.\s]?\d{2})\s+(' + NAME + r')',
         text,
     )
     if m:
         return normalize_cpf(m.group(1)), m.group(2).strip()
 
-    # Fallback: primeiro CPF que não seja CNPJ nem responsável
+    # Formato 4: Cédula C — "CPF Nome Completo" + linha com dado
+    m = re.search(
+        r'CPF\s+Nome\s+Completo[^\n]*\n+\s*'
+        r'(\d{3}[.\s]?\d{3}[.\s]?\d{3}[-\.\s]?\d{2})[,\s]+(' + NAME + r')',
+        text,
+    )
+    if m:
+        return normalize_cpf(m.group(1)), m.group(2).strip().rstrip(',')
+
     all_cnpjs = {re.sub(r'\D', '', c) for c in CNPJ_RE.findall(text)}
+    ignore_norm = {normalize_cpf(x) for x in IGNORE_CPFS}
+
+    # Fallback 1: linha isolada CPF + NOME EM MAIÚSCULAS
+    for line in text.splitlines():
+        line = line.strip()
+        lm = re.match(
+            r'^(\d{3}[.\s]?\d{3}[.\s]?\d{3}[-\.\s]?\d{2})\s+'
+            r'([A-ZÁÉÍÓÚÂÊÎÔÛÃÕ][A-ZÁÉÍÓÚÂÊÎÔÛÃÕ ]{2,})$',
+            line,
+        )
+        if lm:
+            norm = normalize_cpf(lm.group(1))
+            if norm not in all_cnpjs and norm not in ignore_norm:
+                return norm, lm.group(2).strip()
+
+    # Fallback 2: primeiro CPF qualquer
     for cpf in CPF_RE.findall(text):
         norm = normalize_cpf(cpf)
-        if norm not in all_cnpjs and norm not in {normalize_cpf(x) for x in IGNORE_CPFS}:
+        if norm not in all_cnpjs and norm not in ignore_norm:
             return norm, "Desconhecido"
 
     return "", "Desconhecido"
