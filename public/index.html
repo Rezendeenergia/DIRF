@@ -309,6 +309,7 @@ function hideEl(el){ el.style.display='none'; }
 function showEl(el,d){ el.style.display=d||'block'; }
 
 // ══════════════════════════ PDF TEXT EXTRACTION ══════════════════════════
+// Reconstructs lines from Y-position so regex patterns with \n work correctly
 async function extractAllPagesText(file) {
   const lib = await getPdfjsLib();
   const ab  = await file.arrayBuffer();
@@ -317,45 +318,90 @@ async function extractAllPagesText(file) {
   for (let p = 1; p <= doc.numPages; p++) {
     const page = await doc.getPage(p);
     const tc   = await page.getTextContent();
-    pages.push(tc.items.map(i => i.str).join(' '));
+    // Group items by rounded Y coordinate → reconstruct line breaks
+    const lineMap = new Map();
+    for (const item of tc.items) {
+      if (!item.str) continue;
+      const y = Math.round(item.transform[5]); // Y position
+      if (!lineMap.has(y)) lineMap.set(y, []);
+      lineMap.get(y).push(item.str);
+    }
+    // Sort lines top-to-bottom (descending Y in PDF coords)
+    const sortedYs = [...lineMap.keys()].sort((a, b) => b - a);
+    const lines = sortedYs.map(y => lineMap.get(y).join(' ').trim()).filter(Boolean);
+    pages.push(lines.join('\n'));
   }
-  return pages; // array: one string per page
+  return pages;
 }
 
 function extractCollaborator(text) {
-  const CPF_RE  = /\b(\d{3}[.\s]?\d{3}[.\s]?\d{3}[-\.\s]?\d{2})\b/g;
-  const CNPJ_RE = /\b\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2}\b/g;
-  const IGNORE  = new Set(['03356745182']);
-  const norm    = c => c.replace(/\D/g,'');
+  const CPF_PAT  = String.raw`(\d{3}[.\s]?\d{3}[.\s]?\d{3}[-\.\s]?\d{2})`;
+  const NAME_PAT = String.raw`([A-Z\u00C0-\u00FF][A-Z\u00C0-\u00FFa-z\u00C0-\u00FF .'-]{2,80})`;
+  const CPF_RE   = new RegExp(CPF_PAT, 'g');
+  const CNPJ_RE  = /\b\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2}\b/g;
+  const IGNORE   = new Set(['03356745182']);
+  const norm     = c => c.replace(/\D/g,'');
+  // \s+ below matches both spaces and newlines — works regardless of how pdf.js joins text
+  const S = String.raw`[\s\S]{0,80}?`; // lazy wildcard between label and value
 
-  // Formato 1: Informe 829
-  let m = text.match(/C\.P\.F\.\s+NOME COMPLETO[\s\S]{0,30}?\n?\s*(\d{3}[.\s]?\d{3}[.\s]?\d{3}[-\.\s]?\d{2})\s+([A-Z\u00C0-\u00FF][A-Z\u00C0-\u00FFa-z\u00C0-\u00FF ]+)/);
+  // Formato 1: Informe 829  "C.P.F.   NOME COMPLETO \n 000.111... FULANO"
+  let m = text.match(new RegExp(
+    String.raw`C\.P\.F\.\s+NOME\s+COMPLETO` + S +
+    CPF_PAT + String.raw`\s+` + NAME_PAT
+  ));
   if (m) return { cpf: norm(m[1]), nome: m[2].trim() };
 
-  // Formato 2: DIRF Folha
-  m = text.match(/INFORMA[\u00C7C][\u00C3A]O DO BENEFICI[\u00C1A]RIO[\s\S]{0,50}?CPF:\s*(\d{3}[.\s]?\d{3}[.\s]?\d{3}[-\.\s]?\d{2})\s+Nome:\s*\d+\s*-\s*([A-Z\u00C0-\u00FF][A-Z\u00C0-\u00FFa-z\u00C0-\u00FF ]+)/);
+  // Formato 2: DIRF Folha  "INFORMAÇÃO DO BENEFICIÁRIO ... CPF: 000... Nome: 180 - FULANO"
+  m = text.match(new RegExp(
+    String.raw`INFORMA[\u00C7C][\u00C3A]O\s+DO\s+BENEFICI[\u00C1A]RIO` + S +
+    String.raw`CPF:\s*` + CPF_PAT +
+    String.raw`\s+Nome:\s*\d+\s*-\s*` + NAME_PAT
+  ));
   if (m) return { cpf: norm(m[1]), nome: m[2].trim() };
 
-  // Formato 3: Informe Janeiro
-  m = text.match(/CPF:\s+Nome Completo:[\s\S]{0,30}?\n?\s*(\d{3}[.\s]?\d{3}[.\s]?\d{3}[-\.\s]?\d{2})\s+([A-Z\u00C0-\u00FF][A-Z\u00C0-\u00FFa-z\u00C0-\u00FF ]+)/);
+  // Formato 2b: DIRF sem número antes do nome  "Nome: FULANO"
+  m = text.match(new RegExp(
+    String.raw`INFORMA[\u00C7C][\u00C3A]O\s+DO\s+BENEFICI[\u00C1A]RIO` + S +
+    String.raw`CPF:\s*` + CPF_PAT +
+    String.raw`\s+Nome:\s*` + NAME_PAT
+  ));
   if (m) return { cpf: norm(m[1]), nome: m[2].trim() };
 
-  // Formato 4: Cédula C — "CPF Nome Completo" + linha com dado
-  m = text.match(/CPF\s+Nome\s+Completo[^\n]*\n+\s*(\d{3}[.\s]?\d{3}[.\s]?\d{3}[-\.\s]?\d{2})[,\s]+([A-Z\u00C0-\u00FF][A-Z\u00C0-\u00FFa-z\u00C0-\u00FF ]+)/);
+  // Formato 3: Informe Janeiro  "CPF:   Nome Completo: \n 000... FULANO"
+  m = text.match(new RegExp(
+    String.raw`CPF:\s+Nome\s+Completo:` + S +
+    CPF_PAT + String.raw`\s+` + NAME_PAT
+  ));
+  if (m) return { cpf: norm(m[1]), nome: m[2].trim() };
+
+  // Formato 4: Cédula C  "CPF    Nome Completo \n 000..., FULANO"
+  m = text.match(new RegExp(
+    String.raw`CPF\s+Nome\s+Completo` + S +
+    CPF_PAT + String.raw`[,\s]+` + NAME_PAT
+  ));
   if (m) return { cpf: norm(m[1]), nome: m[2].trim().replace(/,\s*$/, '') };
+
+  // Formato 5: genérico  "CPF: 000..." seguido de nome na mesma ou próxima linha
+  m = text.match(new RegExp(
+    String.raw`\bCPF[:\s]+` + CPF_PAT +
+    String.raw`[\s\n]+` + NAME_PAT
+  ));
+  if (m) { const n = norm(m[1]); if (!IGNORE.has(n)) return { cpf: n, nome: m[2].trim() }; }
 
   const cnpjSet = new Set([...text.matchAll(CNPJ_RE)].map(x => x[0].replace(/\D/g,'')));
 
-  // Fallback 1: linha isolada CPF + NOME EM MAIÚSCULAS
+  // Fallback 1: linha isolada  "000.111.222-33  NOME EM MAIÚSCULAS"
   for (const line of text.split(/\n/)) {
-    const lm = line.trim().match(/^(\d{3}[.\s]?\d{3}[.\s]?\d{3}[-\.\s]?\d{2})\s+([A-Z\u00C0-\u00FF][A-Z\u00C0-\u00FF ]{2,})$/);
+    const lm = line.trim().match(new RegExp(
+      String.raw`^` + CPF_PAT + String.raw`\s+([A-Z\u00C0-\u00FF][A-Z\u00C0-\u00FF ]{2,})$`
+    ));
     if (lm) {
       const n = norm(lm[1]);
       if (!IGNORE.has(n) && !cnpjSet.has(n)) return { cpf: n, nome: lm[2].trim() };
     }
   }
 
-  // Fallback 2: primeiro CPF que não seja CNPJ nem ignorado
+  // Fallback 2: qualquer CPF válido
   for (const c of text.matchAll(CPF_RE)) {
     const n = norm(c[1]);
     if (!IGNORE.has(n) && !cnpjSet.has(n)) return { cpf: n, nome: null };
