@@ -6,7 +6,7 @@ import zipfile
 from collections import defaultdict
 
 import pdfplumber
-from flask import Flask, jsonify, request, send_from_directory
+from flask import Flask, jsonify, make_response, request, send_from_directory
 from pypdf import PdfReader, PdfWriter
 
 # Resolve paths relative to this file's directory (works on Render)
@@ -105,7 +105,13 @@ def sanitize_filename(name: str) -> str:
 def index():
     html_path = os.path.join(PUBLIC_DIR, 'index.html')
     with open(html_path, encoding="utf-8") as f:
-        return f.read()
+        html = f.read()
+    resp = make_response(html)
+    resp.headers["Content-Type"]  = "text/html; charset=utf-8"
+    resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    resp.headers["Pragma"]        = "no-cache"
+    resp.headers["Expires"]       = "0"
+    return resp
 
 @app.route("/images/<path:filename>")
 def serve_image(filename):
