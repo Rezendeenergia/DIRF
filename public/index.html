@@ -344,8 +344,6 @@ function extractCollaborator(text) {
   const NAME_P  = String.raw`([A-Z\u00C0-\u00FF][A-Z\u00C0-\u00FFa-z\u00C0-\u00FF .'-]{2,70})`;
 
   // ── DIRF Folha ────────────────────────────────────────────────────────────
-  // pdfplumber: "CPF: 000.020.872-86 Nome: 180 - BRUNO AUGUSTO DOS SANTOS MONTEIRO"
-  // pdf.js:     "CPF:   Nome:   180 - BRUNO AUGUSTO DOS SANTOS MONTEIRO 000.020.872-86"
   const benefBlock = text.match(
     /INFORMA[\u00C7C][\u00C3A]O\s+DO\s+BENEFICI[\u00C1A]RIO\s+DO\s+DECLARANTE([\s\S]{0,300})/
   );
@@ -369,23 +367,42 @@ function extractCollaborator(text) {
   }
 
   // ── Informe 829 ───────────────────────────────────────────────────────────
-  // pdfplumber: "C.P.F. NOME COMPLETO\n087.525.722-42 ABIMAEL DA SILVA SAMBRANO"
-  // pdf.js: same structure with Y-position reconstruction
   let m = text.match(new RegExp(
     String.raw`C\.P\.F\.\s+NOME\s+COMPLETO[\s\S]{0,80}?` + CPF_P + String.raw`\s+` + NAME_P
   ));
   if (m) return { cpf: norm(m[1]), nome: m[2].trim() };
 
   // ── Informe Janeiro ───────────────────────────────────────────────────────
-  // pdfplumber: "CPF: Nome Completo:\n000.235.472-19 MARCOS ANDRE MENDES PEREIRA"
-  // pdf.js: "CPF: Nome Completo:\n000.235.472-19 MARCOS..." OR "CPF: Nome Completo: 000... NOME"
-  // Key insight: labels "CPF:" and "Nome Completo:" appear on SAME line, value on NEXT line
+  // Layout: "CPF:  Nome Completo:" on one line, "000.xxx NOME" on next line
+  // OR all on one line. OR CPF and Nome on separate lines.
+  // Strategy: find the "Pessoa Física Beneficiária" block, then extract CPF+Nome
+
+  const pessoaBlock = text.match(
+    /Pessoa\s+F[ií]sica\s+Benefici[aá]ria[\s\S]{0,20}?\n([\s\S]{0,300}?)(?:\nNatureza|\n3\.)/
+  );
+  if (pessoaBlock) {
+    const blk = pessoaBlock[1];
+    // Try: CPF and Nome on same line after labels
+    let bm = blk.match(new RegExp(
+      String.raw`CPF:[\s\S]{0,30}?Nome\s+Completo:[\s\S]{0,5}?\n?\s*` + CPF_P + String.raw`\s+` + NAME_P
+    ));
+    if (bm) return { cpf: norm(bm[1]), nome: bm[2].trim() };
+    // Try: value line "CPF_DIGITS NOME" directly
+    bm = blk.match(new RegExp(String.raw`^\s*` + CPF_P + String.raw`\s+` + NAME_P, 'm'));
+    if (bm) return { cpf: norm(bm[1]), nome: bm[2].trim() };
+    // Try: CPF: value\nNome Completo: value
+    const cpfLine = blk.match(/CPF:\s*(\d{3}[\.\s]?\d{3}[\.\s]?\d{3}[-\.\s]?\d{2})/);
+    const nomeLine = blk.match(/Nome\s+Completo:\s*([A-Z\u00C0-\u00FF][A-Z\u00C0-\u00FFa-z\u00C0-\u00FF .'-]{2,70})/);
+    if (cpfLine && nomeLine) return { cpf: norm(cpfLine[1]), nome: nomeLine[1].trim() };
+  }
+
+  // Fallback: generic "CPF: Nome Completo:" anywhere
   m = text.match(new RegExp(
-    String.raw`CPF:\s+Nome\s+Completo:\s*\n?\s*` + CPF_P + String.raw`\s+` + NAME_P
+    String.raw`CPF:\s*Nome\s+Completo:[\s\S]{0,10}?` + CPF_P + String.raw`\s+` + NAME_P
   ));
   if (m) return { cpf: norm(m[1]), nome: m[2].trim() };
 
-  // ── Fallbacks ─────────────────────────────────────────────────────────────
+  // ── Fallbacks gerais ──────────────────────────────────────────────────────
   const cnpjSet = new Set([...text.matchAll(CNPJ_RE)].map(x => x[0].replace(/\D/g,'')));
 
   // Fallback 1: linha isolada "CPF NOME EM MAIÚSCULAS"
