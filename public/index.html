@@ -521,6 +521,11 @@ sep.btn.addEventListener('click', async () => {
         pagesProcessed++;
         setProgress(40 + (pagesProcessed / totalPages) * 30, `Página ${pagesProcessed}/${totalPages}`);
         const result = extractCollaborator(allPageTexts[fi][pi]);
+        // Debug: log first 5 pages to console
+        if (fi === 0 && pi < 5) {
+          console.log(`[DBG] Page ${pi+1} text (first 400 chars):\n${allPageTexts[fi][pi].slice(0,400)}`);
+          console.log(`[DBG] Page ${pi+1} result:`, result);
+        }
         if (!result || !result.cpf) {
           warnings.push(`Pág. ${pi+1} de "${sepFiles[fi].name}": CPF não identificado.`);
           continue;
