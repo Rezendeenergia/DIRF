@@ -323,25 +323,39 @@ async function extractAllPagesText(file) {
 }
 
 function extractCollaborator(text) {
-  const CPF_RE  = /\b(\d{3}[.\s]?\d{3}[.\s]?\d{3}[-.\s]?\d{2})\b/g;
+  const CPF_RE  = /\b(\d{3}[.\s]?\d{3}[.\s]?\d{3}[-\.\s]?\d{2})\b/g;
   const CNPJ_RE = /\b\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2}\b/g;
   const IGNORE  = new Set(['03356745182']);
   const norm    = c => c.replace(/\D/g,'');
 
   // Formato 1: Informe 829
-  let m = text.match(/C\.P\.F\.\s+NOME COMPLETO[\s\S]{0,30}?\n?\s*(\d{3}[.\s]?\d{3}[.\s]?\d{3}[-.\s]?\d{2})\s+([A-ZÁÉÍÓÚÂÊÎÔÛÃÕÀÈÌÒÙÇ][A-ZÁÉÍÓÚÂÊÎÔÛÃÕÀÈÌÒÙÇa-záéíóúâêîôûãõàèìòùç ]+)/);
+  let m = text.match(/C\.P\.F\.\s+NOME COMPLETO[\s\S]{0,30}?\n?\s*(\d{3}[.\s]?\d{3}[.\s]?\d{3}[-\.\s]?\d{2})\s+([A-Z\u00C0-\u00FF][A-Z\u00C0-\u00FFa-z\u00C0-\u00FF ]+)/);
   if (m) return { cpf: norm(m[1]), nome: m[2].trim() };
 
   // Formato 2: DIRF Folha
-  m = text.match(/INFORMAÇÃO DO BENEFICIÁRIO[\s\S]{0,50}?CPF:\s*(\d{3}[.\s]?\d{3}[.\s]?\d{3}[-.\s]?\d{2})\s+Nome:\s*\d+\s*-\s*([A-ZÁÉÍÓÚÂÊÎÔÛÃÕÀÈÌÒÙÇ][A-ZÁÉÍÓÚÂÊÎÔÛÃÕÀÈÌÒÙÇa-záéíóúâêîôûãõàèìòùç ]+)/);
+  m = text.match(/INFORMA[\u00C7C][\u00C3A]O DO BENEFICI[\u00C1A]RIO[\s\S]{0,50}?CPF:\s*(\d{3}[.\s]?\d{3}[.\s]?\d{3}[-\.\s]?\d{2})\s+Nome:\s*\d+\s*-\s*([A-Z\u00C0-\u00FF][A-Z\u00C0-\u00FFa-z\u00C0-\u00FF ]+)/);
   if (m) return { cpf: norm(m[1]), nome: m[2].trim() };
 
   // Formato 3: Informe Janeiro
-  m = text.match(/CPF:\s+Nome Completo:[\s\S]{0,30}?\n?\s*(\d{3}[.\s]?\d{3}[.\s]?\d{3}[-.\s]?\d{2})\s+([A-ZÁÉÍÓÚÂÊÎÔÛÃÕÀÈÌÒÙÇ][A-ZÁÉÍÓÚÂÊÎÔÛÃÕÀÈÌÒÙÇa-záéíóúâêîôûãõàèìòùç ]+)/);
+  m = text.match(/CPF:\s+Nome Completo:[\s\S]{0,30}?\n?\s*(\d{3}[.\s]?\d{3}[.\s]?\d{3}[-\.\s]?\d{2})\s+([A-Z\u00C0-\u00FF][A-Z\u00C0-\u00FFa-z\u00C0-\u00FF ]+)/);
   if (m) return { cpf: norm(m[1]), nome: m[2].trim() };
 
-  // Fallback: primeiro CPF que não seja CNPJ nem ignorado
+  // Formato 4: Cédula C — "CPF Nome Completo" + linha com dado
+  m = text.match(/CPF\s+Nome\s+Completo[^\n]*\n+\s*(\d{3}[.\s]?\d{3}[.\s]?\d{3}[-\.\s]?\d{2})[,\s]+([A-Z\u00C0-\u00FF][A-Z\u00C0-\u00FFa-z\u00C0-\u00FF ]+)/);
+  if (m) return { cpf: norm(m[1]), nome: m[2].trim().replace(/,\s*$/, '') };
+
   const cnpjSet = new Set([...text.matchAll(CNPJ_RE)].map(x => x[0].replace(/\D/g,'')));
+
+  // Fallback 1: linha isolada CPF + NOME EM MAIÚSCULAS
+  for (const line of text.split(/\n/)) {
+    const lm = line.trim().match(/^(\d{3}[.\s]?\d{3}[.\s]?\d{3}[-\.\s]?\d{2})\s+([A-Z\u00C0-\u00FF][A-Z\u00C0-\u00FF ]{2,})$/);
+    if (lm) {
+      const n = norm(lm[1]);
+      if (!IGNORE.has(n) && !cnpjSet.has(n)) return { cpf: n, nome: lm[2].trim() };
+    }
+  }
+
+  // Fallback 2: primeiro CPF que não seja CNPJ nem ignorado
   for (const c of text.matchAll(CPF_RE)) {
     const n = norm(c[1]);
     if (!IGNORE.has(n) && !cnpjSet.has(n)) return { cpf: n, nome: null };
