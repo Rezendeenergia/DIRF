@@ -6,7 +6,7 @@ import zipfile
 from collections import defaultdict
 
 import pdfplumber
-from flask import Flask, jsonify, make_response, request, send_from_directory
+from flask import Flask, jsonify, make_response, redirect, request, send_from_directory
 from pypdf import PdfReader, PdfWriter
 
 # Resolve paths relative to this file's directory (works on Render)
@@ -115,7 +115,8 @@ def _serve_html():
 
 @app.route("/")
 def index():
-    return _serve_html()
+    # Force redirect to /app to bypass Render's CDN cache on /
+    return redirect('/app', code=302)
 
 @app.route("/app")
 def app_page():
